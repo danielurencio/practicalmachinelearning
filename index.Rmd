@@ -1,0 +1,111 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Daniel Urencio"
+output: html_document
+---
+# Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Getting the data
+
+Both the training and test data sets are available online. In order to download the data so that it can be used inside R  two  strings containing the train and test data sets' URLs are stored in two different variables called `train_url` and `test_url`.
+
+
+```{r}
+train_url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+```
+
+These two variables are then going to be passed to the `read.csv()` function in order to read them in a more appropriate manner. Two new variables are going to be declared so that the required information can be read from R. Additionally, the function will have a `na.strings` parameter to indicate which kind of values are going to be interpreted as **"NA"** fields; these are **"NA"**, **"#DIV/0!"** and the empty string **""**.
+
+```{r}
+training.data = read.csv( url(train_url), na.strings=c("NA","#DIV/0!","") )
+testing.data = read.csv( url(test_url), na.strings=c("NA","#DIV/0!","") )
+```
+
+# Cleaning the data
+In order to check how many columns within the training data set have "NA" values, a simple "for loop" code can be implemented. This piece of code will iterate through every column and it will inspect how many observations in each column has "NA" as a value by running the `length()` function. Then it will store the number of the matching "NA" values in the previously declared vector-variable called `na`.
+
+```{r}
+na = c();
+
+for(i in 1:ncol(training.data)) {
+     na[i] = length(training.data[,i][is.na(training.data[,i])])
+}
+
+```
+
+After storing the number of "NA" values in the `na` vector, it can be shown how many columns from the initial training data set have empty or unspecified values. **There are 100 columns with useless observations**.
+```{r}
+na
+length ( na[which(na!=0)] )
+```
+
+These columns contain at nearly **98% of NA values** within its fields so *all these columns should be removed to procede with the analysis.*
+
+```{r}
+na[which(na!=0)] / nrow(training.data)
+range ( na[which(na!=0)] / nrow(training.data) )
+```
+
+To clean the data, a new variable called `n` will be declared to store the index of all of those columns that are to be removed; to achieve this, a for loop will be run so that it can check with an *"if statement"* all of the stored values in the `na` variable that contain "NA" values. Since the minimum percentage of useless observations per column in relation to the total amount of rows in the data frame is almost 98%; *if the value is different from zero then the index will be stored in the `n` vector*. This will keep track of all the unwanted columns and it will allow the removal of these from the data set.
+
+The *first seven columns* reference unimportant aspects for the analysis since these contain information such as the name of the participants in the experiment, the recorded time-stamp, and other features. *These columns will also be removed.*
+
+```{r}
+n = c();
+
+for( i in 1:length(na) ) {
+    if(na[i] != 0) n[i] = i
+}
+
+n = n[!is.na(n)]
+
+clean.training.data = training.data[,-c(1:7,n)]
+clean.testing.data = testing.data[,-c(1:7,n)]
+```
+
+After all these steps the data set is ready to do the further analysis. A total of *107 columns were removed* and two new variable were declared under the name `clean.training.data` and `clean.testing.data` where all the necessary features are considered.
+
+```{r}
+dim(training.data)[2] - dim(clean.training.data)[2]
+dim(clean.training.data)
+```
+
+# Fitting the model
+
+In order to avoid any possible correlations among the remaining predictors a **Random Forest** algorithm will be performed on the cleaned data. Given this decision, the number of features to grow the trees in the algorithm is given by approximately `sqrt(ncol(clean.training.data - 1))`. Since using a *Bagging* method might be tendentious in choosing a very strong predictor, a *Random Forest* allows to re-sample through the features' set thus it is possible to choose other variables and *decorralate* the outcome of the predictions; furthermore, when applying *Random Forest* there is no need to use cross-validation. For additional details and specifics that support this choice there are two freely available sources that provide a broader explanation, one is [An Introduction to Statistical Learning](http://www-bcf.usc.edu/~gareth/ISL/) and the other [The Elements of Statistical Learning](http://statweb.stanford.edu/~tibs/ElemStatLearn/).
+
+To fit the chosen model, the corresponding package has to be loaded with `library(randomForest)`. Then, **to avoid overfitting**, a new sample containing **60%** of the data will be generated and stored in a variable called `trainSample`; the fitting of the model will be applied in this data set to then *predict over the remaining 40%* corresponding to the `testSample` variable.
+
+```{r}
+library(randomForest)
+
+trainSample = sample(1:nrow(clean.training.data), nrow(clean.training.data)*0.6)
+testSample = clean.training.data[-trainSample,]
+
+rf.classe = randomForest(clean.training.data$classe~., data=clean.training.data, subset=trainSample, mtry=sqrt(52), importance=TRUE)
+
+rf.classe
+
+plot(rf.classe)
+```
+
+As it can be seen from the results, the error rate is nearly **0.7%** and the re-sampling; the number of trees is 500 and the number of predictors tried at each split is 7 given that the total number of remaining features after cleaning the data was 52 (`sqrt(52)` is approximately 7).
+
+# Prediction
+
+By using the model fit to predict the `testSample` that contains 40% of the remaining observations, an **accuracy of roughly 99%** is provided in the prediction.
+
+```{r}
+library(caret)
+confusionMatrix(predict(rf.classe, testSample), testSample$classe)
+```
+
+Once these preliminary steps are finished, the prediction to the original data in the `clean.testing.data` containing 20 observations can be made.
+
+```{r}
+predict(rf.classe, clean.testing.data)
+```
+
